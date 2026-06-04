@@ -1,818 +1,385 @@
 // lib/presentation/screens/dashboard/dashboard_screen.dart
-
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/navigation/app_router.dart';
+import '../../../data/repositories/repositories.dart';
+import '../../../domain/entities/entities.dart';
 import '../../widgets/common/apex_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
-
-  @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
-
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _selectedIndex = 0;
+  final _profileRepo = ProfileRepository();
+  final _scriptRepo  = ScriptRepository();
+  final _sessionRepo = SessionRepository();
+  int _tab = 0;
+  UserEntity?          _user;
+  List<ScriptEntity>   _scripts  = [];
+  List<SessionEntity>  _sessions = [];
+  bool _loading = true;
 
-  // Mock data
-  final _user = _MockUser(
-    name: 'Marcus Aurelius',
-    level: 6,
-    levelName: 'Orator',
-    totalSessions: 23,
-    avgConfidence: 78.4,
-    streak: 5,
-  );
+  @override void initState() { super.initState(); _load(); }
 
-  final _recentSessions = [
-    _MockSession('Business Pitch', 82, 'A', '12:34', '2h ago'),
-    _MockSession('Team Update', 71, 'B', '08:21', 'Yesterday'),
-    _MockSession('TEDx Practice', 90, 'S+', '15:02', '3 days ago'),
-  ];
-
-  final _scripts = [
-    _MockScript('Q3 Investor Pitch', 'Venture Capitalists', true, '8m'),
-    _MockScript('Product Launch', 'General Audience', true, '5m'),
-    _MockScript('Leadership Summit', 'Executives', false, '12m'),
-  ];
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final results = await Future.wait([
+      _profileRepo.getProfile(),
+      _scriptRepo.getAll(),
+      _sessionRepo.getAll(),
+    ]);
+    if (!mounted) return;
+    results[0].fold((_){}, (u) => _user   = u as UserEntity);
+    results[1].fold((_){}, (s) => _scripts  = s as List<ScriptEntity>);
+    results[2].fold((_){}, (s) => _sessions = s as List<SessionEntity>);
+    setState(() => _loading = false);
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.obsidian,
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _HomeTab(user: _user, sessions: _recentSessions, scripts: _scripts),
-          _ScriptsTab(scripts: _scripts),
-          const _AnalyticsTab(),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.obsidian,
+    body: _loading
+      ? const Center(child: CircularProgressIndicator(color: AppColors.goldRoyal))
+      : IndexedStack(index: _tab, children: [
+          _HomeTab(user:_user, scripts:_scripts, sessions:_sessions, onRefresh:_load),
+          _ScriptsTab(scripts:_scripts, onRefresh:_load),
+          _AnalyticsTab(sessions:_sessions),
           const _ProfileTab(),
-        ],
-      ),
-      bottomNavigationBar: _ApexBottomNav(
-        selectedIndex: _selectedIndex,
-        onTap: (i) => setState(() => _selectedIndex = i),
-      ),
-    );
-  }
+        ]),
+    bottomNavigationBar: _BottomNav(index:_tab, onTap:(i)=>setState(()=>_tab=i)),
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HOME TAB
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Home Tab ──────────────────────────────────────────────
 class _HomeTab extends StatelessWidget {
-  final _MockUser user;
-  final List<_MockSession> sessions;
-  final List<_MockScript> scripts;
-
-  const _HomeTab({
-    required this.user,
-    required this.sessions,
-    required this.scripts,
-  });
+  final UserEntity? user;
+  final List<ScriptEntity> scripts;
+  final List<SessionEntity> sessions;
+  final VoidCallback onRefresh;
+  const _HomeTab({required this.user, required this.scripts,
+      required this.sessions, required this.onRefresh});
 
   @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        // ── App Bar ──────────────────────────────────────
-        SliverAppBar(
-          expandedHeight: 200,
-          collapsedHeight: 60,
-          pinned: true,
-          backgroundColor: AppColors.obsidian,
-          flexibleSpace: FlexibleSpaceBar(
-            background: Stack(
-              children: [
-                // Gradient header
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFF1A1200), AppColors.obsidian],
-                    ),
-                  ),
-                ),
-                // Decorative circles
-                Positioned(
-                  top: -30, right: -20,
-                  child: Container(
-                    width: 160, height: 160,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.goldDim, width: 1),
-                    ),
-                  ),
-                ),
-                // User greeting
-                Positioned(
-                  bottom: 16, left: 20, right: 20,
-                  child: Row(
-                    children: [
-                      // Avatar
-                      Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [AppColors.goldRoyal, AppColors.goldMuted],
-                          ),
-                          boxShadow: [BoxShadow(color: AppColors.goldGlow, blurRadius: 12)],
-                        ),
-                        child: Center(
-                          child: Text(
-                            user.name.substring(0, 1),
-                            style: const TextStyle(
-                              fontFamily: 'Cinzel',
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.obsidian,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Good morning,',
-                              style: const TextStyle(
-                                fontFamily: 'Outfit', fontSize: 12,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                            Text(
-                              user.name,
-                              style: const TextStyle(
-                                fontFamily: 'Outfit', fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Level badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.goldDim,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppColors.goldRoyal, width: 1),
-                          boxShadow: [BoxShadow(color: AppColors.goldGlow, blurRadius: 8)],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star, color: AppColors.goldBright, size: 12),
-                            const SizedBox(width: 4),
-                            Text(
-                              'LVL ${user.level} ${user.levelName.toUpperCase()}',
-                              style: const TextStyle(
-                                fontFamily: 'Outfit', fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.goldBright,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // ── Content ──────────────────────────────────────
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              const SizedBox(height: 16),
-
-              // Quick Stats Row
-              _QuickStatsRow(user: user).animate().fadeIn(delay: 100.ms),
-
-              const SizedBox(height: 24),
-
-              // START PRACTICE CTA
-              _StartPracticeCard().animate().fadeIn(delay: 200.ms),
-
-              const SizedBox(height: 28),
-
-              // Recent Sessions
-              ApexSectionHeader(
-                title: 'Recent Sessions',
-                subtitle: '${sessions.length} total this week',
-                action: TextButton(
-                  onPressed: () {},
-                  child: const Text('See All',
-                    style: TextStyle(fontFamily: 'Outfit', fontSize: 12, color: AppColors.goldRoyal)),
-                ),
-              ).animate().fadeIn(delay: 300.ms),
-              const SizedBox(height: 12),
-              ...sessions.asMap().entries.map((e) =>
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _SessionCard(session: e.value)
-                    .animate().fadeIn(delay: Duration(milliseconds: 350 + e.key * 80))
-                    .slideX(begin: 0.05, end: 0),
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              // Scripts
-              ApexSectionHeader(
-                title: 'My Scripts',
-                subtitle: '${scripts.length} scripts saved',
-                action: IconButton(
-                  icon: const Icon(Icons.add, color: AppColors.goldRoyal, size: 20),
-                  onPressed: () => context.push(AppRouter.scriptEditor),
-                ),
-              ).animate().fadeIn(delay: 500.ms),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 140,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: scripts.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (ctx, i) => _ScriptCard(script: scripts[i])
-                    .animate().fadeIn(delay: Duration(milliseconds: 550 + i * 80)),
-                ),
-              ),
-
-              const SizedBox(height: 100),
+  Widget build(BuildContext context) => CustomScrollView(slivers:[
+    SliverAppBar(expandedHeight:180, pinned:true, backgroundColor:AppColors.obsidian,
+      flexibleSpace: FlexibleSpaceBar(background: Stack(children:[
+        Container(decoration:const BoxDecoration(gradient:AppColors.darkGradient)),
+        Positioned(top:-30, right:-20, child:Container(width:160, height:160,
+          decoration:BoxDecoration(shape:BoxShape.circle,
+            border:Border.all(color:AppColors.goldDim)))),
+        Positioned(bottom:14, left:20, right:20, child: Row(children:[
+          Container(width:46, height:46,
+            decoration: BoxDecoration(shape:BoxShape.circle,
+              gradient:AppColors.goldGradient,
+              boxShadow:[BoxShadow(color:AppColors.goldGlow, blurRadius:12)]),
+            child: Center(child: Text(user?.fullName.substring(0,1) ?? 'A',
+              style:const TextStyle(fontFamily:'Outfit', fontSize:20,
+                  fontWeight:FontWeight.w800, color:AppColors.obsidian)))),
+          const SizedBox(width:12),
+          Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+            const Text('Good morning,', style:TextStyle(fontFamily:'Outfit',
+                fontSize:11, color:AppColors.textMuted)),
+            Text(user?.fullName ?? '…', style:const TextStyle(fontFamily:'Outfit',
+                fontSize:15, fontWeight:FontWeight.w700, color:AppColors.textPrimary)),
+          ])),
+          Container(padding:const EdgeInsets.symmetric(horizontal:10, vertical:5),
+            decoration: BoxDecoration(color:AppColors.goldDim,
+              borderRadius:BorderRadius.circular(20),
+              border:Border.all(color:AppColors.goldRoyal),
+              boxShadow:[BoxShadow(color:AppColors.goldGlow, blurRadius:8)]),
+            child:Text('⭐ LVL ${user?.apexLevel ?? 1} ${(user?.levelName ?? 'Novice').toUpperCase()}',
+              style:const TextStyle(fontFamily:'Outfit', fontSize:10,
+                  fontWeight:FontWeight.w700, color:AppColors.goldBright, letterSpacing:0.5))),
+        ])),
+      ])),
+    ),
+    SliverPadding(padding:const EdgeInsets.all(18), sliver: SliverList(
+      delegate: SliverChildListDelegate([
+        // Stats row
+        Row(children:[
+          _Stat('${user?.totalSessions??0}','Sessions',Icons.play_circle_outline,AppColors.accentBlue),
+          const SizedBox(width:10),
+          _Stat('${user?.avgConfidence.toInt()??0}%','Avg Score',Icons.trending_up,AppColors.matrixGreen),
+          const SizedBox(width:10),
+          _Stat('🔥 ${user?.streakDays??0}','Day Streak',Icons.local_fire_department,AppColors.amberWarning),
+        ]).animate().fadeIn(delay:100.ms),
+        const SizedBox(height:22),
+        // Start CTA
+        GestureDetector(onTap:()=>context.push(AppRouter.livePractice),
+          child:Container(height:110,
+            decoration:BoxDecoration(gradient:const LinearGradient(
+              colors:[Color(0xFF2A1E00), Color(0xFF1A1200)]),
+              borderRadius:BorderRadius.circular(18),
+              border:Border.all(color:AppColors.goldDim, width:1.5),
+              boxShadow:[BoxShadow(color:AppColors.goldGlow, blurRadius:20)]),
+            child:Row(children:[
+              const SizedBox(width:18),
+              Container(width:54, height:54, decoration:BoxDecoration(
+                shape:BoxShape.circle, color:AppColors.goldGlow,
+                border:Border.all(color:AppColors.goldRoyal, width:1.5)),
+                child:const Icon(Icons.play_arrow_rounded, color:AppColors.goldBright, size:28)),
+              const SizedBox(width:16),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,
+                mainAxisAlignment:MainAxisAlignment.center, children:[
+                  const Text('START PRACTICE', style:TextStyle(fontFamily:'Outfit',
+                      fontSize:17, fontWeight:FontWeight.w800, color:AppColors.goldBright, letterSpacing:0.5)),
+                  const SizedBox(height:3),
+                  const Text('Live posture + vocal AI feedback', style:TextStyle(
+                    fontFamily:'Outfit', fontSize:11, color:AppColors.textSecondary)),
+                ])),
+              const Icon(Icons.arrow_forward_ios, color:AppColors.goldRoyal, size:14),
+              const SizedBox(width:18),
             ]),
           ),
-        ),
-      ],
-    );
-  }
+        ).animate().fadeIn(delay:180.ms),
+        const SizedBox(height:24),
+        // Recent sessions
+        SectionHeader(title:'Recent Sessions', sub:'${sessions.length} total',
+          action:TextButton(onPressed:(){}, child:const Text('See All',
+            style:TextStyle(fontFamily:'Outfit', fontSize:11, color:AppColors.goldRoyal)))),
+        const SizedBox(height:10),
+        if (sessions.isEmpty)
+          _EmptyState('No sessions yet', 'Tap Start Practice to begin', Icons.mic_none),
+        ...sessions.take(3).toList().asMap().entries.map((e) => Padding(
+          padding:const EdgeInsets.only(bottom:10),
+          child: _SessionCard(e.value, onTap:()=>context.push(AppRouter.postGame, extra:e.value.id))
+            .animate().fadeIn(delay:Duration(milliseconds:300+e.key*70)).slideX(begin:0.04, end:0),
+        )),
+        const SizedBox(height:24),
+        // Scripts preview
+        SectionHeader(title:'My Scripts', sub:'${scripts.length} saved',
+          action:IconButton(icon:const Icon(Icons.add, color:AppColors.goldRoyal, size:20),
+            onPressed:()=>context.push(AppRouter.scriptEditor))),
+        const SizedBox(height:10),
+        if (scripts.isEmpty)
+          _EmptyState('No scripts yet', 'Create your first speech script', Icons.description_outlined),
+        if (scripts.isNotEmpty) SizedBox(height:130, child:ListView.separated(
+          scrollDirection:Axis.horizontal, itemCount:scripts.length,
+          separatorBuilder:(_,__)=>const SizedBox(width:12),
+          itemBuilder:(ctx, i)=>_ScriptMiniCard(scripts[i],
+            onTap:()=>context.push(AppRouter.scriptEditor, extra:scripts[i].id)),
+        )),
+        const SizedBox(height:90),
+      ]),
+    )),
+  ]);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// QUICK STATS ROW
-// ─────────────────────────────────────────────────────────────────────────────
-class _QuickStatsRow extends StatelessWidget {
-  final _MockUser user;
-  const _QuickStatsRow({required this.user});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _StatTile(
-          value: '${user.totalSessions}',
-          label: 'Sessions',
-          icon: Icons.play_circle_outline,
-          color: AppColors.accentBlueBright,
-        ),
-        const SizedBox(width: 10),
-        _StatTile(
-          value: '${user.avgConfidence.toInt()}%',
-          label: 'Avg Confidence',
-          icon: Icons.trending_up,
-          color: AppColors.matrixGreen,
-        ),
-        const SizedBox(width: 10),
-        _StatTile(
-          value: '🔥 ${user.streak}',
-          label: 'Day Streak',
-          icon: Icons.local_fire_department,
-          color: AppColors.amberWarning,
-        ),
-      ],
-    );
-  }
+class _Stat extends StatelessWidget {
+  final String v, l; final IconData icon; final Color c;
+  const _Stat(this.v, this.l, this.icon, this.c);
+  @override Widget build(BuildContext context) => Expanded(child: Container(
+    padding: const EdgeInsets.all(11), decoration: BoxDecoration(color:AppColors.cardDark,
+      borderRadius:BorderRadius.circular(12), border:Border.all(color:AppColors.borderDark)),
+    child: Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+      Icon(icon, color:c, size:15), const SizedBox(height:5),
+      Text(v, style:const TextStyle(fontFamily:'Outfit', fontSize:17,
+          fontWeight:FontWeight.w800, color:AppColors.textPrimary)),
+      Text(l, style:const TextStyle(fontFamily:'Outfit', fontSize:9, color:AppColors.textMuted)),
+    ]),
+  ));
 }
 
-class _StatTile extends StatelessWidget {
-  final String value;
-  final String label;
-  final IconData icon;
-  final Color color;
-
-  const _StatTile({
-    required this.value, required this.label,
-    required this.icon, required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.cardDark,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderDark),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                fontFamily: 'Outfit', fontSize: 18,
-                fontWeight: FontWeight.w700, color: AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontFamily: 'Outfit', fontSize: 10,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// START PRACTICE CARD
-// ─────────────────────────────────────────────────────────────────────────────
-class _StartPracticeCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push(AppRouter.livePractice, extra: <String, dynamic>{}),
-      child: Container(
-        height: 120,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF2A1E00), Color(0xFF1A1200)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.goldDim, width: 1.5),
-          boxShadow: [BoxShadow(color: AppColors.goldGlow, blurRadius: 20)],
-        ),
-        child: Stack(
-          children: [
-            // Background circles
-            Positioned(right: -20, bottom: -20,
-              child: Container(
-                width: 120, height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.goldDim.withOpacity(0.3),
-                ),
-              ),
-            ),
-            // Content
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Container(
-                    width: 56, height: 56,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.goldGlow,
-                      border: Border.all(color: AppColors.goldRoyal, width: 1.5),
-                    ),
-                    child: const Icon(Icons.play_arrow_rounded, color: AppColors.goldBright, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          'START PRACTICE',
-                          style: TextStyle(
-                            fontFamily: 'Cinzel', fontSize: 18,
-                            fontWeight: FontWeight.w700, color: AppColors.goldBright,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Live posture + vocal AI feedback',
-                          style: TextStyle(
-                            fontFamily: 'Outfit', fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios, color: AppColors.goldRoyal, size: 16),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SESSION CARD
-// ─────────────────────────────────────────────────────────────────────────────
 class _SessionCard extends StatelessWidget {
-  final _MockSession session;
-  const _SessionCard({required this.session});
-
-  Color get _gradeColor {
-    switch (session.grade) {
-      case 'S+': return AppColors.goldBright;
-      case 'A': return AppColors.matrixGreen;
-      case 'B': return AppColors.accentBlueBright;
-      default: return AppColors.amberWarning;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push(AppRouter.postGame, extra: 'mock_id'),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.cardDark,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderDark),
-        ),
-        child: Row(
-          children: [
-            // Grade circle
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _gradeColor.withOpacity(0.1),
-                border: Border.all(color: _gradeColor.withOpacity(0.4), width: 1.5),
-              ),
-              child: Center(
-                child: Text(
-                  session.grade,
-                  style: TextStyle(
-                    fontFamily: 'Outfit', fontSize: 13,
-                    fontWeight: FontWeight.w800, color: _gradeColor,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    session.title,
-                    style: const TextStyle(
-                      fontFamily: 'Outfit', fontSize: 14,
-                      fontWeight: FontWeight.w600, color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${session.score}% confidence  ·  ${session.duration}',
-                    style: const TextStyle(
-                      fontFamily: 'Outfit', fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              session.timeAgo,
-              style: const TextStyle(
-                fontFamily: 'Outfit', fontSize: 11,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  final SessionEntity s; final VoidCallback onTap;
+  const _SessionCard(this.s, {required this.onTap});
+  @override Widget build(BuildContext context) => GestureDetector(onTap:onTap,
+    child:Container(padding:const EdgeInsets.all(13),
+      decoration:BoxDecoration(color:AppColors.cardDark, borderRadius:BorderRadius.circular(13),
+        border:Border.all(color:AppColors.borderDark)),
+      child:Row(children:[
+        GradeBadge(grade:s.grade),
+        const SizedBox(width:12),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+          Text('Session ${s.id}', style:const TextStyle(fontFamily:'Outfit', fontSize:13,
+              fontWeight:FontWeight.w600, color:AppColors.textPrimary)),
+          Text('${s.confidenceScore.toInt()}% confidence  ·  ${s.durationLabel}',
+            style:const TextStyle(fontFamily:'Outfit', fontSize:11, color:AppColors.textMuted)),
+        ])),
+        Text(s.createdAt.substring(0,10), style:const TextStyle(
+          fontFamily:'Outfit', fontSize:10, color:AppColors.textMuted)),
+      ]),
+    ));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SCRIPT CARD (horizontal scroll)
-// ─────────────────────────────────────────────────────────────────────────────
-class _ScriptCard extends StatelessWidget {
-  final _MockScript script;
-  const _ScriptCard({required this.script});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push(AppRouter.scriptEditor, extra: 'mock_id'),
-      child: Container(
-        width: 170,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF1E1E28), Color(0xFF14141C)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.borderDark),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    script.title,
-                    maxLines: 2,
-                    style: const TextStyle(
-                      fontFamily: 'Outfit', fontSize: 13,
-                      fontWeight: FontWeight.w600, color: AppColors.textPrimary,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              script.audience,
-              style: const TextStyle(
-                fontFamily: 'Outfit', fontSize: 10, color: AppColors.textMuted,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                if (script.isApexified)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.goldDim,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text('⚡ APEX',
-                      style: TextStyle(fontFamily: 'Outfit', fontSize: 9,
-                          fontWeight: FontWeight.w700, color: AppColors.goldBright)),
-                  ),
-                const Spacer(),
-                Text(script.duration,
-                  style: const TextStyle(fontFamily: 'Outfit', fontSize: 10, color: AppColors.textMuted)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+class _ScriptMiniCard extends StatelessWidget {
+  final ScriptEntity s; final VoidCallback onTap;
+  const _ScriptMiniCard(this.s, {required this.onTap});
+  @override Widget build(BuildContext context) => GestureDetector(onTap:onTap,
+    child:Container(width:160, padding:const EdgeInsets.all(13),
+      decoration:BoxDecoration(gradient:AppColors.cardGradient, borderRadius:BorderRadius.circular(13),
+        border:Border.all(color:AppColors.borderDark)),
+      child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+        Expanded(child:Text(s.title, maxLines:2, style:const TextStyle(fontFamily:'Outfit',
+            fontSize:13, fontWeight:FontWeight.w600, color:AppColors.textPrimary, height:1.3))),
+        Text(s.audienceType, style:const TextStyle(fontFamily:'Outfit', fontSize:10, color:AppColors.textMuted)),
+        const SizedBox(height:5),
+        Row(children:[
+          if (s.isApexified) Container(padding:const EdgeInsets.symmetric(horizontal:6, vertical:2),
+            decoration:BoxDecoration(color:AppColors.goldDim, borderRadius:BorderRadius.circular(6)),
+            child:const Text('⚡ APEX', style:TextStyle(fontFamily:'Outfit', fontSize:9,
+                fontWeight:FontWeight.w700, color:AppColors.goldBright))),
+          const Spacer(),
+          Text(s.durationLabel, style:const TextStyle(fontFamily:'Outfit', fontSize:10, color:AppColors.textMuted)),
+        ]),
+      ]),
+    ));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OTHER TABS (stubs)
-// ─────────────────────────────────────────────────────────────────────────────
+class _EmptyState extends StatelessWidget {
+  final String title, sub; final IconData icon;
+  const _EmptyState(this.title, this.sub, this.icon);
+  @override Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom:16), padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(color:AppColors.cardDark, borderRadius:BorderRadius.circular(12),
+      border:Border.all(color:AppColors.borderDark)),
+    child:Column(children:[
+      Icon(icon, color:AppColors.textMuted, size:32),
+      const SizedBox(height:8),
+      Text(title, style:const TextStyle(fontFamily:'Outfit', fontSize:13,
+          fontWeight:FontWeight.w600, color:AppColors.textSecondary)),
+      Text(sub, style:const TextStyle(fontFamily:'Outfit', fontSize:11, color:AppColors.textMuted)),
+    ]),
+  );
+}
+
+// ── Scripts Tab ───────────────────────────────────────────
 class _ScriptsTab extends StatelessWidget {
-  final List<_MockScript> scripts;
-  const _ScriptsTab({required this.scripts});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.obsidian,
-      appBar: AppBar(
-        title: const Text('MY SCRIPTS'),
-        backgroundColor: AppColors.obsidian,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: AppColors.goldRoyal),
-            onPressed: () => context.push(AppRouter.scriptEditor),
-          ),
-        ],
-      ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(20),
-        itemCount: scripts.length,
-        itemBuilder: (ctx, i) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.cardDark,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.borderDark),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(scripts[i].title,
-                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 15,
-                            fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                      const SizedBox(height: 4),
-                      Text('${scripts[i].audience}  ·  ${scripts[i].duration}',
-                        style: const TextStyle(fontFamily: 'Outfit', fontSize: 12, color: AppColors.textMuted)),
-                    ],
-                  ),
-                ),
-                if (scripts[i].isApexified)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.goldDim,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('⚡ APEX',
-                      style: TextStyle(fontFamily: 'Outfit', fontSize: 10,
-                          fontWeight: FontWeight.w700, color: AppColors.goldBright)),
-                  ),
-              ],
-            ),
-          ).animate().fadeIn(delay: Duration(milliseconds: i * 80)).slideX(begin: 0.05, end: 0),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRouter.scriptEditor),
-        backgroundColor: AppColors.goldRoyal,
-        foregroundColor: AppColors.obsidian,
-        icon: const Icon(Icons.add),
-        label: const Text('NEW SCRIPT',
-          style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, letterSpacing: 1)),
-      ),
-    );
-  }
+  final List<ScriptEntity> scripts; final VoidCallback onRefresh;
+  const _ScriptsTab({required this.scripts, required this.onRefresh});
+  @override Widget build(BuildContext context) => Scaffold(
+    backgroundColor:AppColors.obsidian,
+    appBar:AppBar(title:const Text('MY SCRIPTS'),
+      actions:[IconButton(icon:const Icon(Icons.add, color:AppColors.goldRoyal),
+        onPressed:()=>context.push(AppRouter.scriptEditor).then((_)=>onRefresh()))]),
+    body: scripts.isEmpty
+      ? Center(child:Column(mainAxisSize:MainAxisSize.min, children:[
+          const Icon(Icons.description_outlined, color:AppColors.textMuted, size:52),
+          const SizedBox(height:12),
+          const Text('No scripts yet', style:TextStyle(fontFamily:'Outfit', fontSize:16,
+              fontWeight:FontWeight.w600, color:AppColors.textSecondary)),
+          const SizedBox(height:20),
+          GoldButton(label:'Create Script', icon:Icons.add,
+            isFullWidth:false,
+            onTap:()=>context.push(AppRouter.scriptEditor).then((_)=>onRefresh())),
+        ]))
+      : ListView.builder(padding:const EdgeInsets.all(18), itemCount:scripts.length,
+          itemBuilder:(ctx, i) {
+            final s = scripts[i];
+            return Container(margin:const EdgeInsets.only(bottom:12), padding:const EdgeInsets.all(15),
+              decoration:BoxDecoration(color:AppColors.cardDark, borderRadius:BorderRadius.circular(13),
+                border:Border.all(color:AppColors.borderDark)),
+              child:GestureDetector(onTap:()=>context.push(AppRouter.scriptEditor, extra:s.id)
+                  .then((_)=>onRefresh()),
+                child:Row(children:[
+                  Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                    Text(s.title, style:const TextStyle(fontFamily:'Outfit', fontSize:14,
+                        fontWeight:FontWeight.w600, color:AppColors.textPrimary)),
+                    const SizedBox(height:3),
+                    Text('${s.audienceType}  ·  ${s.durationLabel}', style:const TextStyle(
+                      fontFamily:'Outfit', fontSize:11, color:AppColors.textMuted)),
+                  ])),
+                  if (s.isApexified) Container(padding:const EdgeInsets.symmetric(horizontal:7, vertical:3),
+                    decoration:BoxDecoration(color:AppColors.goldDim, borderRadius:BorderRadius.circular(7)),
+                    child:const Text('⚡ APEX', style:TextStyle(fontFamily:'Outfit', fontSize:10,
+                        fontWeight:FontWeight.w700, color:AppColors.goldBright))),
+                ]),
+              ),
+            ).animate().fadeIn(delay:Duration(milliseconds:i*60)).slideX(begin:0.04, end:0);
+          }),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed:()=>context.push(AppRouter.scriptEditor).then((_)=>onRefresh()),
+      backgroundColor:AppColors.goldRoyal, foregroundColor:AppColors.obsidian,
+      icon:const Icon(Icons.add), label:const Text('NEW SCRIPT',
+        style:TextStyle(fontFamily:'Outfit', fontWeight:FontWeight.w700, letterSpacing:1))),
+  );
 }
 
+// ── Analytics Tab ─────────────────────────────────────────
 class _AnalyticsTab extends StatelessWidget {
-  const _AnalyticsTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.obsidian,
-      appBar: AppBar(
-        title: const Text('ANALYTICS'),
-        backgroundColor: AppColors.obsidian,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const ApexSectionHeader(title: 'Performance Overview'),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: ScoreRing(score: 78.4, label: 'CONFIDENCE', color: AppColors.matrixGreen, size: 90)),
-                Expanded(child: ScoreRing(score: 65.2, label: 'ENTHUSIASM', color: AppColors.goldRoyal, size: 90)),
-                Expanded(child: ScoreRing(score: 82.1, label: 'AUTHORITY', color: AppColors.accentBlueBright, size: 90)),
-              ],
-            ).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 28),
-            const ApexSectionHeader(title: 'Weekly Progress'),
-            const SizedBox(height: 12),
-            Container(
-              height: 160,
-              decoration: BoxDecoration(
-                color: AppColors.cardDark,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.borderDark),
-              ),
-              child: const Center(
-                child: Text('Progress Chart\n(fl_chart integration)',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Outfit', color: AppColors.textMuted)),
-              ),
-            ).animate().fadeIn(delay: 300.ms),
-          ],
-        ),
-      ),
+  final List<SessionEntity> sessions;
+  const _AnalyticsTab({required this.sessions});
+  @override Widget build(BuildContext context) {
+    final avgConf = sessions.isEmpty ? 0.0 : sessions.map((s)=>s.confidenceScore).reduce((a,b)=>a+b)/sessions.length;
+    final avgEnth = sessions.isEmpty ? 0.0 : sessions.map((s)=>s.enthusiasmScore).reduce((a,b)=>a+b)/sessions.length;
+    final avgAuth = sessions.isEmpty ? 0.0 : sessions.map((s)=>s.authorityScore).reduce((a,b)=>a+b)/sessions.length;
+    return Scaffold(backgroundColor:AppColors.obsidian,
+      appBar:AppBar(title:const Text('ANALYTICS')),
+      body:SingleChildScrollView(padding:const EdgeInsets.all(18), child:Column(children:[
+        const SectionHeader(title:'Average Performance'),
+        const SizedBox(height:16),
+        Row(mainAxisAlignment:MainAxisAlignment.spaceAround, children:[
+          ScoreRing(score:avgConf, label:'CONFIDENCE', color:AppColors.matrixGreen, size:88),
+          ScoreRing(score:avgEnth, label:'ENTHUSIASM', color:AppColors.goldRoyal, size:88),
+          ScoreRing(score:avgAuth, label:'AUTHORITY', color:AppColors.accentBlue, size:88),
+        ]).animate().fadeIn(delay:150.ms),
+        const SizedBox(height:28),
+        const SectionHeader(title:'All Sessions'),
+        const SizedBox(height:12),
+        if (sessions.isEmpty) const Center(child:Padding(padding:EdgeInsets.all(32),
+          child:Text('Complete your first session to see analytics.',
+            textAlign:TextAlign.center,
+            style:TextStyle(fontFamily:'Outfit', color:AppColors.textMuted, fontSize:13)))),
+        ...sessions.asMap().entries.map((e) => Padding(
+          padding:const EdgeInsets.only(bottom:10),
+          child: _SessionCard(e.value, onTap:()=>Navigator.of(context).push(MaterialPageRoute(
+            builder:(_)=>Scaffold()))).animate().fadeIn(delay:Duration(milliseconds:e.key*60)),
+        )),
+      ])),
     );
   }
 }
 
+// ── Profile Tab ───────────────────────────────────────────
 class _ProfileTab extends StatelessWidget {
   const _ProfileTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.obsidian,
-      appBar: AppBar(
-        title: const Text('PROFILE'),
-        backgroundColor: AppColors.obsidian,
-      ),
-      body: const Center(
-        child: Text('Profile Screen', style: TextStyle(color: AppColors.textMuted)),
-      ),
-    );
-  }
+  @override Widget build(BuildContext context) => Scaffold(
+    backgroundColor:AppColors.obsidian,
+    appBar:AppBar(title:const Text('PROFILE')),
+    body:Center(child:Column(mainAxisSize:MainAxisSize.min, children:[
+      const Text('Profile', style:TextStyle(color:AppColors.textMuted)),
+      const SizedBox(height:20),
+      GoldButton(label:'Sign Out', isFullWidth:false, icon:Icons.logout,
+        onTap:() async {
+          await AuthRepository().logout();
+          if(context.mounted) context.go(AppRouter.login);
+        }),
+    ])),
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOTTOM NAV
-// ─────────────────────────────────────────────────────────────────────────────
-class _ApexBottomNav extends StatelessWidget {
-  final int selectedIndex;
-  final ValueChanged<int> onTap;
-
-  const _ApexBottomNav({required this.selectedIndex, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
+// ── Bottom Nav ────────────────────────────────────────────
+class _BottomNav extends StatelessWidget {
+  final int index; final ValueChanged<int> onTap;
+  const _BottomNav({required this.index, required this.onTap});
+  @override Widget build(BuildContext context) {
     final items = [
-      (Icons.home_outlined, Icons.home_rounded, 'Home'),
-      (Icons.description_outlined, Icons.description_rounded, 'Scripts'),
-      (Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Analytics'),
-      (Icons.person_outline, Icons.person_rounded, 'Profile'),
+      (Icons.home_outlined,       Icons.home_rounded,       'Home'),
+      (Icons.description_outlined,Icons.description_rounded,'Scripts'),
+      (Icons.bar_chart_outlined,  Icons.bar_chart_rounded,  'Analytics'),
+      (Icons.person_outline,      Icons.person_rounded,     'Profile'),
     ];
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surfaceDark,
-        border: Border(top: BorderSide(color: AppColors.borderDark)),
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 58,
-          child: Row(
-            children: items.asMap().entries.map((e) {
-              final isSelected = selectedIndex == e.key;
-              final (outlineIcon, filledIcon, label) = e.value;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => onTap(e.key),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isSelected ? filledIcon : outlineIcon,
-                          color: isSelected ? AppColors.goldRoyal : AppColors.textMuted,
-                          size: 22,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontFamily: 'Outfit',
-                            fontSize: 10,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                            color: isSelected ? AppColors.goldRoyal : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
+    return Container(decoration:const BoxDecoration(color:AppColors.surfaceDark,
+        border:Border(top:BorderSide(color:AppColors.borderDark))),
+      child:SafeArea(child:SizedBox(height:56, child:Row(
+        children:items.asMap().entries.map((e){
+          final sel = index==e.key;
+          final (out, fill, label) = e.value;
+          return Expanded(child:GestureDetector(
+            onTap:()=>onTap(e.key), behavior:HitTestBehavior.opaque,
+            child:Column(mainAxisAlignment:MainAxisAlignment.center, children:[
+              Icon(sel?fill:out, color:sel?AppColors.goldRoyal:AppColors.textMuted, size:21),
+              const SizedBox(height:2),
+              Text(label, style:TextStyle(fontFamily:'Outfit', fontSize:9,
+                  fontWeight:sel?FontWeight.w600:FontWeight.w400,
+                  color:sel?AppColors.goldRoyal:AppColors.textMuted)),
+            ]),
+          ));
+        }).toList(),
+      ))),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA MODELS
-// ─────────────────────────────────────────────────────────────────────────────
-class _MockUser {
-  final String name, levelName;
-  final int level, totalSessions, streak;
-  final double avgConfidence;
-  const _MockUser({required this.name, required this.level, required this.levelName,
-    required this.totalSessions, required this.avgConfidence, required this.streak});
-}
-
-class _MockSession {
-  final String title, grade, duration, timeAgo;
-  final int score;
-  const _MockSession(this.title, this.score, this.grade, this.duration, this.timeAgo);
-}
-
-class _MockScript {
-  final String title, audience, duration;
-  final bool isApexified;
-  const _MockScript(this.title, this.audience, this.isApexified, this.duration);
 }

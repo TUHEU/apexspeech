@@ -1,8 +1,8 @@
 // lib/core/navigation/app_router.dart
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/splash/splash_screen.dart';
+import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/auth/login_screen.dart';
 import '../../presentation/screens/auth/register_screen.dart';
 import '../../presentation/screens/dashboard/dashboard_screen.dart';
@@ -10,102 +10,63 @@ import '../../presentation/screens/script_editor/script_editor_screen.dart';
 import '../../presentation/screens/live_practice/live_practice_screen.dart';
 import '../../presentation/screens/post_game/post_game_screen.dart';
 import '../../presentation/screens/profile/profile_screen.dart';
-import '../../presentation/screens/onboarding/onboarding_screen.dart';
+import '../../data/repositories/repositories.dart';
 
 class AppRouter {
-  AppRouter._();
+  static const splash       = '/';
+  static const onboarding   = '/onboarding';
+  static const login        = '/login';
+  static const register     = '/register';
+  static const dashboard    = '/dashboard';
+  static const scriptEditor = '/script-editor';
+  static const livePractice = '/live-practice';
+  static const postGame     = '/post-game';
+  static const profile      = '/profile';
 
-  static const String splash       = '/';
-  static const String onboarding   = '/onboarding';
-  static const String login        = '/login';
-  static const String register     = '/register';
-  static const String dashboard    = '/dashboard';
-  static const String scriptEditor = '/script-editor';
-  static const String livePractice = '/live-practice';
-  static const String postGame     = '/post-game';
-  static const String profile      = '/profile';
-
-  static final GoRouter router = GoRouter(
+  static final router = GoRouter(
     initialLocation: splash,
-    debugLogDiagnostics: false,
+    redirect: (ctx, state) async {
+      final isAuth    = await AuthRepository().isLoggedIn();
+      final protected = [dashboard, scriptEditor, livePractice, postGame, profile];
+      if (!isAuth && protected.any((r) => state.fullPath?.startsWith(r) == true)) {
+        return login;
+      }
+      return null;
+    },
     routes: [
-      GoRoute(
-        path: splash,
-        pageBuilder: (ctx, state) => _fade(const SplashScreen(), state),
-      ),
-      GoRoute(
-        path: onboarding,
-        pageBuilder: (ctx, state) => _slide(const OnboardingScreen(), state),
-      ),
-      GoRoute(
-        path: login,
-        pageBuilder: (ctx, state) => _fade(const LoginScreen(), state),
-      ),
-      GoRoute(
-        path: register,
-        pageBuilder: (ctx, state) => _slide(const RegisterScreen(), state),
-      ),
-      GoRoute(
-        path: dashboard,
-        pageBuilder: (ctx, state) => _fade(const DashboardScreen(), state),
-      ),
-      GoRoute(
-        path: scriptEditor,
-        pageBuilder: (ctx, state) => _slide(
-          ScriptEditorScreen(scriptId: state.extra as String?), state,
-        ),
-      ),
-      GoRoute(
-        path: livePractice,
-        pageBuilder: (ctx, state) => _scale(
-          LivePracticeScreen(sessionData: state.extra as Map<String, dynamic>?), state,
-        ),
-      ),
-      GoRoute(
-        path: postGame,
-        pageBuilder: (ctx, state) => _slide(
-          PostGameScreen(sessionId: state.extra as String), state,
-        ),
-      ),
-      GoRoute(
-        path: profile,
-        pageBuilder: (ctx, state) => _slide(const ProfileScreen(), state),
-      ),
+      GoRoute(path: splash,       pageBuilder: (c,s) => _fade(const SplashScreen(), s)),
+      GoRoute(path: onboarding,   pageBuilder: (c,s) => _fade(const OnboardingScreen(), s)),
+      GoRoute(path: login,        pageBuilder: (c,s) => _fade(const LoginScreen(), s)),
+      GoRoute(path: register,     pageBuilder: (c,s) => _slide(const RegisterScreen(), s)),
+      GoRoute(path: dashboard,    pageBuilder: (c,s) => _fade(const DashboardScreen(), s)),
+      GoRoute(path: scriptEditor, pageBuilder: (c,s) => _slide(ScriptEditorScreen(scriptId: s.extra as int?), s)),
+      GoRoute(path: livePractice, pageBuilder: (c,s) => _scale(LivePracticeScreen(scriptId: s.extra as int?), s)),
+      GoRoute(path: postGame,     pageBuilder: (c,s) => _slide(PostGameScreen(sessionId: s.extra as int), s)),
+      GoRoute(path: profile,      pageBuilder: (c,s) => _slide(const ProfileScreen(), s)),
     ],
   );
 
-  static CustomTransitionPage _fade(Widget child, GoRouterState state) =>
-    CustomTransitionPage(
-      key: state.pageKey,
-      child: child,
-      transitionDuration: const Duration(milliseconds: 500),
-      transitionsBuilder: (ctx, anim, _, child) =>
-        FadeTransition(opacity: anim, child: child),
-    );
-
-  static CustomTransitionPage _slide(Widget child, GoRouterState state) =>
-    CustomTransitionPage(
-      key: state.pageKey,
-      child: child,
-      transitionDuration: const Duration(milliseconds: 400),
-      transitionsBuilder: (ctx, anim, _, child) =>
-        SlideTransition(
-          position: Tween(begin: const Offset(1, 0), end: Offset.zero)
-            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        ),
-    );
-
-  static CustomTransitionPage _scale(Widget child, GoRouterState state) =>
-    CustomTransitionPage(
-      key: state.pageKey,
-      child: child,
-      transitionDuration: const Duration(milliseconds: 500),
-      transitionsBuilder: (ctx, anim, _, child) =>
-        ScaleTransition(
-          scale: Tween(begin: 0.92, end: 1.0)
-            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: FadeTransition(opacity: anim, child: child),
-        ),
-    );
+  static CustomTransitionPage _fade(Widget w, GoRouterState s) => CustomTransitionPage(
+    key: s.pageKey, child: w,
+    transitionDuration: const Duration(milliseconds: 500),
+    transitionsBuilder: (c,a,_,ch) => FadeTransition(opacity: a, child: ch),
+  );
+  static CustomTransitionPage _slide(Widget w, GoRouterState s) => CustomTransitionPage(
+    key: s.pageKey, child: w,
+    transitionDuration: const Duration(milliseconds: 380),
+    transitionsBuilder: (c,a,_,ch) => SlideTransition(
+      position: Tween(begin: const Offset(1,0), end: Offset.zero)
+          .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+      child: ch,
+    ),
+  );
+  static CustomTransitionPage _scale(Widget w, GoRouterState s) => CustomTransitionPage(
+    key: s.pageKey, child: w,
+    transitionDuration: const Duration(milliseconds: 450),
+    transitionsBuilder: (c,a,_,ch) => ScaleTransition(
+      scale: Tween(begin: 0.93, end: 1.0)
+          .animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+      child: FadeTransition(opacity: a, child: ch),
+    ),
+  );
 }

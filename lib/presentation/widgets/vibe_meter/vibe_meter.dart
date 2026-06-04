@@ -1,277 +1,113 @@
 // lib/presentation/widgets/vibe_meter/vibe_meter.dart
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/constants/app_colors.dart';
 
 class VibeMeter extends StatefulWidget {
-  final double confidenceScore;   // 0-100
-  final double enthusiasmScore;   // 0-100
-  final bool isActive;
-  final double size;
-
-  const VibeMeter({
-    super.key,
-    required this.confidenceScore,
-    required this.enthusiasmScore,
-    this.isActive = false,
-    this.size = 200,
-  });
-
-  @override
-  State<VibeMeter> createState() => _VibeMeterState();
+  final double confidence, enthusiasm;
+  final bool isActive; final double size;
+  const VibeMeter({super.key, required this.confidence, required this.enthusiasm,
+      this.isActive=false, this.size=180});
+  @override State<VibeMeter> createState() => _VibeMeterState();
 }
-
-class _VibeMeterState extends State<VibeMeter>
-    with TickerProviderStateMixin {
-  late AnimationController _rotateCtrl;
-  late AnimationController _pulseCtrl;
+class _VibeMeterState extends State<VibeMeter> with TickerProviderStateMixin {
+  late AnimationController _rot, _pulse;
   late Animation<double> _pulseAnim;
+  @override void initState() { super.initState();
+    _rot   = AnimationController(vsync:this, duration:const Duration(seconds:9))..repeat();
+    _pulse = AnimationController(vsync:this, duration:const Duration(milliseconds:1400))..repeat(reverse:true);
+    _pulseAnim = Tween(begin:0.96, end:1.04).animate(CurvedAnimation(parent:_pulse, curve:Curves.easeInOut));
+  }
+  @override void dispose() { _rot.dispose(); _pulse.dispose(); super.dispose(); }
 
-  Color get _vibeColor {
-    final energy = (widget.confidenceScore + widget.enthusiasmScore) / 2;
-    if (energy < 30) return AppColors.vibeCalm;
-    if (energy < 55) return AppColors.vibeFocus;
-    if (energy < 80) return AppColors.vibeEnergized;
-    return AppColors.vibeApex;
+  Color get _color {
+    final e = (widget.confidence + widget.enthusiasm) / 2;
+    if (e < 30) return AppColors.accentBlue;
+    if (e < 55) return const Color(0xFF6200EA);
+    if (e < 80) return const Color(0xFFFF6D00);
+    return AppColors.goldBright;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _rotateCtrl = AnimationController(
-      vsync: this, duration: const Duration(seconds: 8),
-    )..repeat();
-    _pulseCtrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.95, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _rotateCtrl.dispose();
-    _pulseCtrl.dispose();
-    super.dispose();
+  String get _label {
+    final e = (widget.confidence + widget.enthusiasm) / 2;
+    if (e < 30) return '😶 Calm';
+    if (e < 55) return '🎯 Focused';
+    if (e < 80) return '🔥 Energized';
+    return '⚡ APEX';
   }
 
   @override
   Widget build(BuildContext context) {
-    final score = (widget.confidenceScore + widget.enthusiasmScore) / 2;
-    final color = _vibeColor;
-
-    return SizedBox(
-      width: widget.size,
-      height: widget.size,
+    final score = (widget.confidence + widget.enthusiasm) / 2;
+    final color = _color;
+    return SizedBox(width: widget.size, height: widget.size,
       child: AnimatedBuilder(
-        animation: Listenable.merge([_rotateCtrl, _pulseCtrl]),
-        builder: (_, __) => Stack(
-          alignment: Alignment.center,
-          children: [
-            // Outer glow rings
-            if (widget.isActive) ...[
-              _GlowRing(
-                size: widget.size,
-                color: color,
-                opacity: 0.08,
-                scale: _pulseAnim.value * 1.15,
-              ),
-              _GlowRing(
-                size: widget.size,
-                color: color,
-                opacity: 0.12,
-                scale: _pulseAnim.value * 1.06,
-              ),
-            ],
-
-            // Rotating arcs background
-            Transform.rotate(
-              angle: _rotateCtrl.value * 2 * pi,
-              child: CustomPaint(
-                size: Size(widget.size, widget.size),
-                painter: _VibeMeterArcPainter(
-                  score: score / 100,
-                  color: color,
-                  isActive: widget.isActive,
-                ),
-              ),
-            ),
-
-            // Static progress ring
-            SizedBox(
-              width: widget.size * 0.78,
-              height: widget.size * 0.78,
-              child: CircularProgressIndicator(
-                value: score / 100,
-                strokeWidth: 6,
-                backgroundColor: AppColors.borderDark,
-                valueColor: AlwaysStoppedAnimation(color),
-                strokeCap: StrokeCap.round,
-              ),
-            ),
-
-            // Inner content
-            Transform.scale(
-              scale: widget.isActive ? _pulseAnim.value : 1.0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildVibeLabel(score, color),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${score.toInt()}%',
-                    style: TextStyle(
-                      fontFamily: 'Outfit',
-                      fontSize: widget.size * 0.16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  Text(
-                    'ENERGY',
-                    style: TextStyle(
-                      fontFamily: 'Outfit',
-                      fontSize: widget.size * 0.065,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.textMuted,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        animation: Listenable.merge([_rot, _pulse]),
+        builder: (_, __) => Stack(alignment: Alignment.center, children: [
+          if (widget.isActive) ...[
+            _ring(widget.size, color, 0.06, _pulseAnim.value * 1.16),
+            _ring(widget.size, color, 0.11, _pulseAnim.value * 1.07),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVibeLabel(double score, Color color) {
-    String label;
-    if (score < 30) label = '😶 Calm';
-    else if (score < 55) label = '🎯 Focused';
-    else if (score < 80) label = '🔥 Energized';
-    else label = '⚡ APEX';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.4), width: 1),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: 'Outfit',
-          fontSize: widget.size * 0.06,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _GlowRing extends StatelessWidget {
-  final double size;
-  final Color color;
-  final double opacity;
-  final double scale;
-
-  const _GlowRing({
-    required this.size,
-    required this.color,
-    required this.opacity,
-    required this.scale,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform.scale(
-      scale: scale,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: color.withOpacity(opacity),
-            width: 1,
+          Transform.rotate(angle: _rot.value * 2 * pi,
+            child: CustomPaint(size: Size(widget.size, widget.size),
+              painter: _ArcDashPainter(score/100, color, widget.isActive))),
+          SizedBox(width: widget.size*0.78, height: widget.size*0.78,
+            child: CircularProgressIndicator(
+              value: (score/100).clamp(0.0,1.0), strokeWidth: 5.5,
+              backgroundColor: AppColors.borderDark,
+              valueColor: AlwaysStoppedAnimation(color), strokeCap: StrokeCap.round,
+            )),
+          Transform.scale(scale: widget.isActive ? _pulseAnim.value : 1.0,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(padding: const EdgeInsets.symmetric(horizontal:8, vertical:2),
+                decoration: BoxDecoration(color: color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.4))),
+                child: Text(_label, style: TextStyle(fontFamily:'Outfit',
+                    fontSize: widget.size*0.062, fontWeight:FontWeight.w600, color:color))),
+              Text('${score.toInt()}%', style: TextStyle(fontFamily:'Outfit',
+                  fontSize: widget.size*0.165, fontWeight:FontWeight.w800,
+                  color:AppColors.textPrimary)),
+              Text('ENERGY', style: TextStyle(fontFamily:'Outfit',
+                  fontSize: widget.size*0.062, color:AppColors.textMuted, letterSpacing:1.5)),
+            ]),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(opacity * 0.5),
-              blurRadius: 20,
-              spreadRadius: 5,
-            ),
-          ],
-        ),
+        ]),
       ),
     );
   }
+  Widget _ring(double s, Color c, double opacity, double scale) =>
+    Transform.scale(scale: scale, child: Container(
+      width: s, height: s,
+      decoration: BoxDecoration(shape: BoxShape.circle,
+        border: Border.all(color: c.withOpacity(opacity)),
+        boxShadow: [BoxShadow(color: c.withOpacity(opacity*0.4), blurRadius:18, spreadRadius:4)])));
 }
 
-class _VibeMeterArcPainter extends CustomPainter {
-  final double score;
-  final Color color;
-  final bool isActive;
-
-  const _VibeMeterArcPainter({
-    required this.score,
-    required this.color,
-    required this.isActive,
-  });
-
+class _ArcDashPainter extends CustomPainter {
+  final double score; final Color color; final bool active;
+  const _ArcDashPainter(this.score, this.color, this.active);
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    if (!isActive) return;
-
-    // Draw decorative dashes around the outer ring
-    final dashPaint = Paint()
-      ..color = color.withOpacity(0.25)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final int dashCount = 36;
-    for (int i = 0; i < dashCount; i++) {
-      final angle = (i / dashCount) * 2 * pi - pi / 2;
-      final shouldShow = i % 3 != 0;
-      if (!shouldShow) continue;
-      final innerR = radius * 0.88;
-      final outerR = radius * 0.95;
+    if (!active) return;
+    final center = Offset(size.width/2, size.height/2);
+    final r      = size.width/2;
+    final paint  = Paint()..color=color.withOpacity(0.22)..strokeWidth=1.5
+                            ..style=PaintingStyle.stroke..strokeCap=StrokeCap.round;
+    for (int i=0; i<36; i++) {
+      if (i%3==0) continue;
+      final a = (i/36)*2*pi - pi/2;
       canvas.drawLine(
-        Offset(center.dx + innerR * cos(angle), center.dy + innerR * sin(angle)),
-        Offset(center.dx + outerR * cos(angle), center.dy + outerR * sin(angle)),
-        dashPaint,
-      );
+        Offset(center.dx+(r*0.87)*cos(a), center.dy+(r*0.87)*sin(a)),
+        Offset(center.dx+(r*0.95)*cos(a), center.dy+(r*0.95)*sin(a)), paint);
     }
-
-    // Draw active arc glow
     if (score > 0) {
-      final glowPaint = Paint()
-        ..color = color.withOpacity(0.15)
-        ..strokeWidth = 18
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round;
-
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius * 0.78),
-        -pi / 2,
-        score * 2 * pi,
-        false,
-        glowPaint,
-      );
+      canvas.drawArc(Rect.fromCircle(center:center, radius:r*0.78),
+        -pi/2, score*2*pi, false,
+        Paint()..color=color.withOpacity(0.12)..strokeWidth=16
+                ..style=PaintingStyle.stroke..strokeCap=StrokeCap.round);
     }
   }
-
-  @override
-  bool shouldRepaint(_VibeMeterArcPainter old) =>
-    old.score != score || old.color != color || old.isActive != isActive;
+  @override bool shouldRepaint(_ArcDashPainter o) => o.score!=score||o.color!=color;
 }
