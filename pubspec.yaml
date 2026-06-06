@@ -18,6 +18,13 @@ dependencies:
   flutter_animate: ^4.5.2
   smooth_page_indicator: ^2.0.1
   fl_chart: ^1.2.0
+  flutter_sound: ^9.30.0
+  speech_to_text: ^7.4.0
+  permission_handler: ^12.0.3
+  audioplayers: ^6.7.1
+  sqflite: ^2.4.3
+  sqflite_common_ffi: ^2.4.1
+  sqlite3: ^3.3.2
 
 dev_dependencies:
   flutter_test:
